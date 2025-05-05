@@ -1,0 +1,233 @@
+import java.awt.*;
+import java.sql.*;
+import javax.swing.*;
+
+public class StudentGradesTracker extends JFrame {
+    JTextField idField, nameField, subjectField, marksField;
+    JTextArea displayArea;
+    Connection conn;
+
+    public StudentGradesTracker() {
+        setTitle("Student Grades and Performance Tracker");
+        setSize(700, 700);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+
+        JPanel inputPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        inputPanel.setBorder(BorderFactory.createTitledBorder("Enter Student Details"));
+        inputPanel.setBackground(new Color(240, 248, 255));
+
+        idField = new JTextField(10);
+        nameField = new JTextField(10);
+        subjectField = new JTextField(10);
+        marksField = new JTextField(10);
+
+        inputPanel.add(new JLabel("ID:")); inputPanel.add(idField);
+        inputPanel.add(new JLabel("Name:")); inputPanel.add(nameField);
+        inputPanel.add(new JLabel("Subject:")); inputPanel.add(subjectField);
+        inputPanel.add(new JLabel("Marks:")); inputPanel.add(marksField);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        buttonPanel.setBorder(BorderFactory.createTitledBorder("Actions"));
+        buttonPanel.setBackground(new Color(224, 255, 255));
+
+        JButton addBtn = new JButton("Add Record");
+        addBtn.setBackground(new Color(70, 130, 180));
+        addBtn.setForeground(Color.WHITE);
+
+        JButton showBtn = new JButton("Show All");
+        showBtn.setBackground(new Color(46, 139, 87));
+        showBtn.setForeground(Color.WHITE);
+
+        JButton deleteBtn = new JButton("Delete Record");
+        deleteBtn.setBackground(new Color(220, 20, 60));
+        deleteBtn.setForeground(Color.WHITE);
+
+        JButton deleteAllBtn = new JButton("Delete All Records");
+        deleteAllBtn.setBackground(new Color(128, 0, 0));
+        deleteAllBtn.setForeground(Color.WHITE);
+
+        JButton cgpaBtn = new JButton("Calculate CGPA");
+        cgpaBtn.setBackground(new Color(255, 140, 0));
+        cgpaBtn.setForeground(Color.WHITE);
+
+        buttonPanel.add(addBtn);
+        buttonPanel.add(showBtn);
+        buttonPanel.add(deleteBtn);
+        buttonPanel.add(deleteAllBtn);
+        buttonPanel.add(cgpaBtn);
+
+        displayArea = new JTextArea(20, 60);
+        displayArea.setEditable(false);
+        displayArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        JScrollPane scrollPane = new JScrollPane(displayArea);
+        scrollPane.setBorder(BorderFactory.createTitledBorder("Display Area"));
+
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        mainPanel.setBackground(new Color(245, 255, 250));
+        mainPanel.add(inputPanel, BorderLayout.NORTH);
+        mainPanel.add(buttonPanel, BorderLayout.CENTER);
+        mainPanel.add(scrollPane, BorderLayout.SOUTH);
+
+        add(mainPanel);
+
+        connectDB();
+        createTable();
+
+        addBtn.addActionListener(e -> addRecord());
+        showBtn.addActionListener(e -> displayRecords());
+        deleteBtn.addActionListener(e -> deleteRecord());
+        deleteAllBtn.addActionListener(e -> deleteAllRecords());
+        cgpaBtn.addActionListener(e -> calculateCGPA());
+
+        setVisible(true);
+    }
+
+    void connectDB() {
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/sowmiyamv", "root", "sowmiya");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    void createTable() {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE IF NOT EXISTS students (id INT PRIMARY KEY, name VARCHAR(100))");
+            stmt.execute("CREATE TABLE IF NOT EXISTS grades (id INT, subject VARCHAR(100), marks INT, FOREIGN KEY (id) REFERENCES students(id))");
+            stmt.execute("CREATE TABLE IF NOT EXISTS student_cgpa (id INT PRIMARY KEY, cgpa DOUBLE, status VARCHAR(50))");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    void addRecord() {
+        try {
+            int id = Integer.parseInt(idField.getText());
+            String name = nameField.getText();
+            String subject = subjectField.getText();
+            int marks = Integer.parseInt(marksField.getText());
+
+            PreparedStatement checkStudent = conn.prepareStatement("SELECT * FROM students WHERE id = ?");
+            checkStudent.setInt(1, id);
+            ResultSet rsStudent = checkStudent.executeQuery();
+            if (!rsStudent.next()) {
+                PreparedStatement insertStudent = conn.prepareStatement("INSERT INTO students (id, name) VALUES (?, ?)");
+                insertStudent.setInt(1, id);
+                insertStudent.setString(2, name);
+                insertStudent.executeUpdate();
+            }
+
+            PreparedStatement checkStmt = conn.prepareStatement("SELECT * FROM grades WHERE id = ? AND subject = ?");
+            checkStmt.setInt(1, id);
+            checkStmt.setString(2, subject);
+            ResultSet rs = checkStmt.executeQuery();
+
+            if (rs.next()) {
+                JOptionPane.showMessageDialog(this, "Record already exists for this student and subject!");
+                return;
+            }
+
+            PreparedStatement ps = conn.prepareStatement("INSERT INTO grades VALUES (?, ?, ?);");
+            ps.setInt(1, id);
+            ps.setString(2, subject);
+            ps.setInt(3, marks);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Record Added!");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    void displayRecords() {
+        displayArea.setText("");
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT g.id, s.name, g.subject, g.marks FROM grades g JOIN students s ON g.id = s.id")) {
+            while (rs.next()) {
+                displayArea.append("ID: " + rs.getInt(1) + ", Name: " + rs.getString(2) + ", Subject: " + rs.getString(3) + ", Marks: " + rs.getInt(4) + "\n");
+            }
+
+            displayArea.append("\nCGPA Table:\n");
+            ResultSet cgpaRs = stmt.executeQuery("SELECT * FROM student_cgpa");
+            while (cgpaRs.next()) {
+                int id = cgpaRs.getInt("id");
+                double cgpa = cgpaRs.getDouble("cgpa");
+                String status = cgpaRs.getString("status");
+                displayArea.append("ID: " + id + ", CGPA: " + String.format("%.2f", cgpa) + " - " + status + "\n");
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    void deleteRecord() {
+        try {
+            int id = Integer.parseInt(idField.getText());
+            String subject = subjectField.getText();
+
+            PreparedStatement psGrades = conn.prepareStatement("DELETE FROM grades WHERE id = ? AND subject = ?");
+            psGrades.setInt(1, id);
+            psGrades.setString(2, subject);
+            int rowsDeletedGrades = psGrades.executeUpdate();
+
+            if (rowsDeletedGrades > 0) {
+                JOptionPane.showMessageDialog(this, "Record Deleted!");
+                calculateCGPA();
+                displayRecords();
+            } else {
+                JOptionPane.showMessageDialog(this, "No matching record found.");
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    void deleteAllRecords() {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate("DELETE FROM grades");
+            stmt.executeUpdate("DELETE FROM student_cgpa");
+            stmt.executeUpdate("DELETE FROM students");
+            JOptionPane.showMessageDialog(this, "All records deleted!");
+            displayRecords();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    void calculateCGPA() {
+        try {
+            int id = Integer.parseInt(idField.getText());
+
+            PreparedStatement ps = conn.prepareStatement("SELECT marks FROM grades WHERE id = ?");
+            ps.setInt(1, id);
+            ResultSet rs = ps.executeQuery();
+            int totalMarks = 0, count = 0;
+            while (rs.next()) {
+                totalMarks += rs.getInt("marks");
+                count++;
+            }
+            if (count > 0) {
+                double avgMarks = totalMarks / (double) count;
+                double cgpa = avgMarks / 10.0;
+                String status = (cgpa >= 7.0) ? "Eligible for Placement" : "Not Eligible";
+                JOptionPane.showMessageDialog(this, "Overall CGPA for ID " + id + " is: " + String.format("%.2f", cgpa) + "\nStatus: " + status);
+
+                PreparedStatement saveCGPA = conn.prepareStatement("REPLACE INTO student_cgpa (id, cgpa, status) VALUES (?, ?, ?)");
+                saveCGPA.setInt(1, id);
+                saveCGPA.setDouble(2, cgpa);
+                saveCGPA.setString(3, status);
+                saveCGPA.executeUpdate();
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        new StudentGradesTracker();
+    }
+}
